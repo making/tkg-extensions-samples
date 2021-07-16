@@ -1,0 +1,247 @@
+groups:
+- name: prometheus
+  rules:
+  - alert: PrometheusScrapeError
+    expr: up == 0
+    for: 15m
+    labels:
+      service: prometheus
+      severity: warning
+    annotations:
+      summary: "Prometheus instance `{{$labels.instance}}` (scrape job `{{$labels.job}}`) down or not reachable"
+      description: "The Prometheus instance at `{{$labels.instance}}` for scrape job `{{$labels.job}}` has been down or has not been reachable during the last 15m"
+
+  - alert: PrometheusConfigReloadFailed
+    expr: prometheus_config_last_reload_successful == 0
+    for: 15m
+    labels:
+      service: prometheus
+      severity: warning
+    annotations:
+      summary: "Prometheus instance `{{$labels.instance}}` config reload failed"
+      description: "The Prometheus instance at `{{$labels.instance}}` has failed to reload its configuration during the last 15m"
+
+  - alert: PrometheusExceededSampleLimit
+    expr: rate(prometheus_target_scrapes_exceeded_sample_limit_total[5m]) > 1
+    for: 10m
+    labels:
+      service: prometheus
+      severity: warning
+    annotations:
+      summary: "Prometheus instance `{{$labels.instance}}` exceeded the sample limit"
+      description: "The Prometheus instance at `{{$labels.instance}}` exceeded the sample limit during the last 10m"
+
+  - alert: PrometheusNotificationsDroppedTooHigh
+    expr: rate(prometheus_notifications_dropped_total[5m]) > 1
+    for: 10m
+    labels:
+      service: prometheus
+      severity: warning
+    annotations:
+      summary: "Prometheus instance `{{$labels.instance}}` is dropping notifications"
+      description: "The Prometheus instance at `{{$labels.instance}}` has been dropping to much notifications during the last 10m"
+
+  - alert: PrometheusNotificationsQueueTooHigh
+    expr: rate(prometheus_notifications_queue_length[5m]) > 1
+    for: 30m
+    labels:
+      service: prometheus
+      severity: warning
+    annotations:
+      summary: "Prometheus instance `{{$labels.instance}}` notifications queue is too high"
+      description: "The Prometheus instance at `{{$labels.instance}}` notifications queue has been too high during the last 30m"
+
+- name: nodes
+  rules:
+  - alert: KubernetesNodeMemoryRequests
+    expr: sum(kube_pod_container_resource_requests_memory_bytes) by (node) / on (node) kube_node_status_capacity_memory_bytes > 0.9
+    for: 10m
+    labels:
+      service: kubernetes
+      severity: warning
+    annotations:
+      summary: "Kubernetes node `{{$labels.node}}` memory requests too high: {{$value}}"
+      description: "Kubernetes node `{{$labels.node}}` reserved over 0.9 of memory for 10m"
+
+  - alert: KubernetesNodeCPURequests
+    expr: sum(kube_pod_container_resource_requests_cpu_cores) by (node) / on (node) kube_node_status_capacity_cpu_cores > 0.9
+    for: 10m
+    labels:
+      service: kubernetes
+      severity: warning
+    annotations:
+      summary: "Kubernetes node `{{$labels.node}}` CPU requests too high: {{$value}}"
+      description: "Kubernetes node `{{$labels.node}}` reserved over 0.9 of CPU cores for 10m"
+
+- name: pods
+  rules:
+  - alert: KubernetesPodNotRunning
+    expr: (kube_pod_status_phase{phase!="Running"} == 1) and (kube_pod_status_phase{phase!="Succeeded"} == 1)
+    for: 10m
+    labels:
+      service: kubernetes
+      severity: warning
+    annotations:
+      summary: "Kubernetes Pod `{{$labels.namespace}}/{{$labels.pod}}` is in state `{{$labels.phase}}`"
+      description: "Kubernetes Pod `{{$labels.namespace}}/{{$labels.pod}}` not `Running` for more than 10m"
+
+- name: fluent-bit
+  rules:
+  - alert: NoOutputBytesProcessed
+    expr: rate(fluentbit_output_proc_bytes_total[5m]) == 0
+    annotations:
+      message: |
+        Fluent Bit instance {{ $labels.instance }}'s output plugin {{ $labels.name }} has not processed any
+        bytes for at least 15 minutes.
+      summary: No Output Bytes Processed
+    for: 15m
+    labels:
+      severity: critical
+
+- name: kubernetes
+  rules:
+  - alert: KubernetesNodeReady
+    expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+    for: 10m
+    labels:
+      severity: critical
+    annotations:
+      summary: Kubernetes Node ready (instance {{ $labels.instance }})
+      description: "Node {{ $labels.node }} has been unready for a long time\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesMemoryPressure
+    expr: kube_node_status_condition{condition="MemoryPressure",status="true"} == 1
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: Kubernetes memory pressure (instance {{ $labels.instance }})
+      description: "{{ $labels.node }} has MemoryPressure condition\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesDiskPressure
+    expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: Kubernetes disk pressure (instance {{ $labels.instance }})
+      description: "{{ $labels.node }} has DiskPressure condition\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesOutOfDisk
+    expr: kube_node_status_condition{condition="OutOfDisk",status="true"} == 1
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: Kubernetes out of disk (instance {{ $labels.instance }})
+      description: "{{ $labels.node }} has OutOfDisk condition\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesOutOfCapacity
+    expr: sum(kube_pod_info) by (node) / sum(kube_node_status_allocatable_pods) by (node) * 100 > 90
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Kubernetes out of capacity (instance {{ $labels.instance }})
+      description: "{{ $labels.node }} is out of capacity\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesJobFailed
+    expr: kube_job_status_failed > 0
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Kubernetes Job failed (instance {{ $labels.instance }})
+      description: "Job {{$labels.namespace}}/{{$labels.exported_job}} failed to complete\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesCronjobSuspended
+    expr: kube_cronjob_spec_suspend != 0
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Kubernetes CronJob suspended (instance {{ $labels.instance }})
+      description: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} is suspended\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesPersistentvolumeclaimPending
+    expr: kube_persistentvolumeclaim_status_phase{phase="Pending"} == 1
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Kubernetes PersistentVolumeClaim pending (instance {{ $labels.instance }})
+      description: "PersistentVolumeClaim {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is pending\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesVolumeOutOfDiskSpace
+    expr: kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes * 100 < 10
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Kubernetes Volume out of disk space (instance {{ $labels.instance }})
+      description: "Volume is almost full (< 10% left)\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesVolumeFullInTwoDays
+    expr: predict_linear(kubelet_volume_stats_available_bytes[6h], 2 * 24 * 3600) < 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: Kubernetes Volume full in two days (instance {{ $labels.instance }})
+      description: "{{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is expected to fill up within two days. Currently {{ $value | humanize }}% is available.\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesPersistentvolumeError
+    expr: kube_persistentvolume_status_phase{phase=~"Failed|Pending"} > 0
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: Kubernetes PersistentVolume error (instance {{ $labels.instance }})
+      description: "Persistent volume is in bad state\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesPodCrashLooping
+    expr: increase(kube_pod_container_status_restarts_total[3m]) > 3
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Kubernetes pod crash looping (instance {{ $labels.instance }})
+      description: "Pod {{ $labels.pod }} is crash looping\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesCronjobTooLong
+    expr: time() - kube_cronjob_next_schedule_time > 3600
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Kubernetes CronJob too long (instance {{ $labels.instance }})
+      description: "CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} is taking more than 1h to complete.\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: KubernetesJobSlowCompletion
+    expr: kube_job_spec_completions - kube_job_status_succeeded > 0
+    for: 12h
+    labels:
+      severity: critical
+    annotations:
+      summary: Kubernetes job slow completion (instance {{ $labels.instance }})
+      description: "Kubernetes Job {{ $labels.namespace }}/{{ $labels.job_name }} did not complete in time.\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+- name: node
+  rules:
+  - alert: HostOutOfMemory
+    expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100 < 5
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host out of memory (instance {{ $labels.instance }})
+      description: "Node memory is filling up (< 5% left)\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
+
+  - alert: HostHighCpuLoad
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 80
+    for: 0m
+    labels:
+      severity: warning
+    annotations:
+      summary: Host high CPU load (instance {{ $labels.instance }})
+      description: "CPU load is > 80%\n  VALUE = {{ $value }}\n  LABELS: {{ $labels }}"
