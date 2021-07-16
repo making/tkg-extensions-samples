@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tanzu-system-monitoring
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana-extension-sa
+  namespace: tanzu-system-monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: grafana-extension-role
+  namespace: tanzu-system-monitoring
+rules:
+- apiGroups: [ "*" ]
+  resources: [ "*" ]
+  verbs: [ "*" ]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: grafana-extension-rolebinding
+  namespace: tanzu-system-monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: grafana-extension-role
+subjects:
+- kind: ServiceAccount
+  name: grafana-extension-sa
+  namespace: tanzu-system-monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: grafana-extension-cluster-role
+rules:
+- apiGroups: [ "*" ]
+  resources: [ "clusterroles", "clusterrolebindings" ]
+  verbs: [ "*" ]
+- apiGroups: [ "" ]
+  resources: [ "namespaces" ]
+  verbs: [ "list" ]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: grafana-extension-cluster-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: grafana-extension-cluster-role
+subjects:
+- kind: ServiceAccount
+  name: grafana-extension-sa
+  namespace: tanzu-system-monitoring
+---
+apiVersion: kappctrl.k14s.io/v1alpha1
+kind: App
+metadata:
+  name: grafana
+  namespace: tanzu-system-monitoring
+  annotations:
+    tmc.cloud.vmware.com/managed: "false"
+spec:
+  syncPeriod: 30s
+  serviceAccountName: grafana-extension-sa
+  fetch:
+  - image:
+      url: projects.registry.vmware.com/tkg/tkg-extensions-templates:v1.3.1_vmware.1
+  template:
+  - ytt:
+      ignoreUnknownComments: true
+      paths:
+      - tkg-extensions/common
+      - tkg-extensions/monitoring/grafana
+      inline:
+        paths:
+          replace-default-dashboard.yaml: |
+            #@ load("@ytt:data", "data")
+            #@ load("@ytt:overlay", "overlay")
+            #@overlay/match by=overlay.subset({"kind":"ConfigMap", "metadata": {"name": "grafana-default-dashboard"}})
+            ---
+            data:
+              default.json: #@ data.values.dashboards.default_json
+            #@overlay/match by=overlay.subset({"kind":"ConfigMap", "metadata": {"name": "grafana-dashboard-apiserver"}})
+            ---
+            data:
+              kubernetes-apiserver.json: #@ data.values.dashboards.kubernetes_apiserver_json
+        pathsFrom:
+        - secretRef:
+            name: grafana-data-values
+  deploy:
+  - kapp:
+      rawOptions:
+      - --wait-timeout=5m
+      - --diff-changes=true
+      - --diff-mask=false
+      inspect:
+        rawOptions:
+        - --tree=true
+
+#@ load("@ytt:data", "data")
+#@ load("@ytt:base64", "base64")
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-data-values
+  namespace: tanzu-system-monitoring
+stringData:
+  #@yaml/text-templated-strings
+  values.yaml: |-
+    #@data/values
+    #@overlay/match-child-defaults missing_ok=True
+    ---
+    monitoring:
+      grafana:
+        secret:
+          admin_password: (@= base64.encode("admin") @)
+        ingress:
+          enabled: false
+    dashboards:
+      default_json: |
+        (@= "\n    ".join(data.read("default.json").splitlines()) @)
+      kubernetes_apiserver_json: |
+        (@= "\n    ".join(data.read("kubernetes-apiserver.json").splitlines()) @)
