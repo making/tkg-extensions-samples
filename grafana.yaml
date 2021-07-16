@@ -102,11 +102,8 @@ spec:
                 grafana_dashboard: "1"
                 app: grafana
             data:
-              #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_disk_performance.json
               system_disk_performance.json: #@ data.values.dashboards.system_disk_performance_json.replace("${DS_PROMETHEUS}", "Prometheus")
-              #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_disk_space.json
               system_disk_space.json: #@ data.values.dashboards.system_disk_space_json.replace("${DS_PROMETHEUS}", "Prometheus")
-              #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_overview.json
               system_overview.json: #@ data.values.dashboards.system_overview_json.replace("${DS_PROMETHEUS}", "Prometheus")
         pathsFrom:
         - secretRef:
@@ -161,9 +158,12 @@ stringData:
     #@overlay/match-child-defaults missing_ok=True
     ---
     dashboards:
+      #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_disk_performance.json
       system_disk_performance_json:  |
         (@= "\n    ".join(data.read("system_disk_performance.json").splitlines()) @)
+      #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_disk_space.json
       system_disk_space_json: |
         (@= "\n    ".join(data.read("system_disk_space.json").splitlines()) @)
+      #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_overview.json
       system_overview_json: |
         (@= "\n    ".join(data.read("system_overview.json").splitlines()) @)
