@@ -90,9 +90,29 @@ spec:
             ---
             data:
               kubernetes-apiserver.json: #@ data.values.dashboards.kubernetes_apiserver_json
+          node-exporter-dashboard.yaml: |
+            #@ load("@ytt:data", "data")
+            ---
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: grafana-node-exporter-dashboard
+              namespace: tanzu-system-monitoring
+              labels:
+                grafana_dashboard: "1"
+                app: grafana
+            data:
+              #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_disk_performance.json
+              system_disk_performance.json: #@ data.values.dashboards.system_disk_performance_json.replace("${DS_PROMETHEUS}", "Prometheus")
+              #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_disk_space.json
+              system_disk_space.json: #@ data.values.dashboards.system_disk_space_json.replace("${DS_PROMETHEUS}", "Prometheus")
+              #! https://raw.githubusercontent.com/bosh-prometheus/prometheus-boshrelease/master/jobs/system_dashboards/templates/system_overview.json
+              system_overview.json: #@ data.values.dashboards.system_overview_json.replace("${DS_PROMETHEUS}", "Prometheus")
         pathsFrom:
         - secretRef:
             name: grafana-data-values
+        - secretRef:
+            name: grafana-node-exporter-dashboard-values
   deploy:
   - kapp:
       rawOptions:
@@ -128,3 +148,22 @@ stringData:
         (@= "\n    ".join(data.read("default.json").splitlines()) @)
       kubernetes_apiserver_json: |
         (@= "\n    ".join(data.read("kubernetes-apiserver.json").splitlines()) @)
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-node-exporter-dashboard-values
+  namespace: tanzu-system-monitoring
+stringData:
+  #@yaml/text-templated-strings
+  node-exporter-dashboard-json.yaml: |
+    #@data/values
+    #@overlay/match-child-defaults missing_ok=True
+    ---
+    dashboards:
+      system_disk_performance_json:  |
+        (@= "\n    ".join(data.read("system_disk_performance.json").splitlines()) @)
+      system_disk_space_json: |
+        (@= "\n    ".join(data.read("system_disk_space.json").splitlines()) @)
+      system_overview_json: |
+        (@= "\n    ".join(data.read("system_overview.json").splitlines()) @)
